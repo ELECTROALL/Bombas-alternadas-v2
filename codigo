@@ -1,0 +1,177 @@
+// --- Controlador de Bombas Alternadas por Monitor Serial ---
+// Autor: Carlos (Electroall)
+// Microcontrolador: ATmega328P
+
+// Configuración de pines para los 3 motores
+const int motor1 = 4;
+const int motor2 = 5;
+const int motor3 = 6;
+
+// Variables de configuración
+int modo = 0;               // 0 = Automático, 1 = Manual
+int cantidadMotores = 2;    // 2 o 3 motores
+unsigned long tiempoAlternancia = 5000;  // ms, por defecto 5 s
+unsigned long ultimoCambio = 0;
+
+// Estado de los motores
+bool estadoMotor1 = false;
+bool estadoMotor2 = false;
+bool estadoMotor3 = false;
+
+// Control interno
+int motorActivo = 1;
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(motor1, OUTPUT);
+  pinMode(motor2, OUTPUT);
+  pinMode(motor3, OUTPUT);
+
+  Serial.println(F("=== CONTROLADOR DE BOMBAS ELECTROALL ==="));
+  Serial.println(F("Sistema iniciado correctamente."));
+  mostrarMenu();
+}
+
+void loop() {
+  if (modo == 0) { // MODO AUTOMÁTICO
+    unsigned long ahora = millis();
+    if (ahora - ultimoCambio >= tiempoAlternancia) {
+      alternarMotores();
+      ultimoCambio = ahora;
+    }
+  }
+
+  // Revisión de comandos serial
+  if (Serial.available()) {
+    char opcion = Serial.read();
+    ejecutarComando(opcion);
+  }
+}
+
+// --- FUNCIONES ---
+void mostrarMenu() {
+  Serial.println(F("\n========= MENU PRINCIPAL ========="));
+  Serial.println(F("a) Cambiar modo (Automatico/Manual)"));
+  Serial.println(F("b) Seleccionar cantidad de motores (2 o 3)"));
+  Serial.println(F("c) Configurar tiempo de alternancia"));
+  Serial.println(F("d) Mostrar estado actual"));
+  Serial.println(F("e) Encender/Apagar motores manualmente"));
+  Serial.println(F("=================================="));
+  Serial.print(F("Modo actual: "));
+  Serial.println(modo == 0 ? F("Automatico") : F("Manual"));
+  Serial.println(F("Ingrese una opcion: "));
+}
+
+void ejecutarComando(char opcion) {
+  switch (opcion) {
+    case 'a':
+      modo = !modo;
+      apagarMotores();
+      Serial.print(F("Modo cambiado a: "));
+      Serial.println(modo == 0 ? F("Automatico") : F("Manual"));
+      break;
+
+    case 'b':
+      Serial.println(F("Ingrese cantidad de motores (2 o 3): "));
+      esperarNumeroMotores();
+      break;
+
+    case 'c':
+      Serial.println(F("Ingrese tiempo de alternancia en segundos: "));
+      esperarTiempo();
+      break;
+
+    case 'd':
+      mostrarEstado();
+      break;
+
+    case 'e':
+      if (modo == 1) controlarManual();
+      else Serial.println(F("Debe estar en modo manual para esta opcion."));
+      break;
+
+    default:
+      Serial.println(F("Opcion no valida."));
+      break;
+  }
+  mostrarMenu();
+}
+
+void esperarNumeroMotores() {
+  while (!Serial.available());
+  int n = Serial.parseInt();
+  if (n == 2 || n == 3) {
+    cantidadMotores = n;
+    Serial.print(F("Cantidad de motores configurada en: "));
+    Serial.println(cantidadMotores);
+  } else Serial.println(F("Valor invalido."));
+}
+
+void esperarTiempo() {
+  while (!Serial.available());
+  int segundos = Serial.parseInt();
+  if (segundos > 0) {
+    tiempoAlternancia = (unsigned long)segundos * 1000;
+    Serial.print(F("Tiempo de alternancia configurado en: "));
+    Serial.print(segundos);
+    Serial.println(F(" segundos."));
+  } else Serial.println(F("Valor invalido."));
+}
+
+void alternarMotores() {
+  apagarMotores();
+  motorActivo++;
+  if (motorActivo > cantidadMotores) motorActivo = 1;
+
+  switch (motorActivo) {
+    case 1: digitalWrite(motor1, HIGH); estadoMotor1 = true; break;
+    case 2: digitalWrite(motor2, HIGH); estadoMotor2 = true; break;
+    case 3: if (cantidadMotores == 3) { digitalWrite(motor3, HIGH); estadoMotor3 = true; } break;
+  }
+
+  Serial.print(F("Motor activo -> M"));
+  Serial.println(motorActivo);
+}
+
+void apagarMotores() {
+  digitalWrite(motor1, LOW);
+  digitalWrite(motor2, LOW);
+  digitalWrite(motor3, LOW);
+  estadoMotor1 = estadoMotor2 = estadoMotor3 = false;
+}
+
+void mostrarEstado() {
+  Serial.println(F("\n--- ESTADO ACTUAL ---"));
+  Serial.print(F("Modo: ")); Serial.println(modo == 0 ? F("Automatico") : F("Manual"));
+  Serial.print(F("Cantidad de motores: ")); Serial.println(cantidadMotores);
+  Serial.print(F("Tiempo alternancia: ")); Serial.print(tiempoAlternancia / 1000); Serial.println(F(" s"));
+  Serial.print(F("Motor 1: ")); Serial.println(estadoMotor1 ? F("ON") : F("OFF"));
+  Serial.print(F("Motor 2: ")); Serial.println(estadoMotor2 ? F("ON") : F("OFF"));
+  if (cantidadMotores == 3) {
+    Serial.print(F("Motor 3: ")); Serial.println(estadoMotor3 ? F("ON") : F("OFF"));
+  }
+  Serial.println(F("----------------------"));
+}
+
+void controlarManual() {
+  Serial.println(F("Seleccione motor (1, 2 o 3) y luego [1=ON / 0=OFF]:"));
+  while (Serial.available() == 0);
+  int nMotor = Serial.parseInt();
+  while (Serial.available() == 0);
+  int accion = Serial.parseInt();
+
+  if (nMotor < 1 || nMotor > cantidadMotores) {
+    Serial.println(F("Motor fuera de rango."));
+    return;
+  }
+
+  bool encender = accion == 1;
+  switch (nMotor) {
+    case 1: digitalWrite(motor1, encender); estadoMotor1 = encender; break;
+    case 2: digitalWrite(motor2, encender); estadoMotor2 = encender; break;
+    case 3: if (cantidadMotores == 3) { digitalWrite(motor3, encender); estadoMotor3 = encender; } break;
+  }
+
+  Serial.print(F("Motor ")); Serial.print(nMotor);
+  Serial.println(encender ? F(" encendido.") : F(" apagado."));
+}
